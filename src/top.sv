@@ -2,10 +2,9 @@
 //_\source top.tlv 41
 
 //_\SV
-   // Included URL: "https://raw.githubusercontent.com/efabless/chipcraft---mest-course/main/tlv_lib/calculator_shell_lib.tlv"
    // Include Tiny Tapeout Lab.
    // Included URL: "https://raw.githubusercontent.com/os-fpga/Virtual-FPGA-Lab/35e36bd144fddd75495d4cbc01c4fc50ac5bde6f/tlv_lib/tiny_tapeout_lib.tlv"// Included URL: "https://raw.githubusercontent.com/os-fpga/Virtual-FPGA-Lab/a069f1e4e19adc829b53237b3e0b5d6763dc3194/tlv_lib/fpga_includes.tlv"
-//_\source top.tlv 153
+//_\source top.tlv 231
 
 //_\SV
 
@@ -17,16 +16,30 @@
 module top(input logic clk, input logic reset, input logic [31:0] cyc_cnt, output logic passed, output logic failed);
    // Tiny tapeout I/O signals.
    logic [7:0] ui_in, uo_out;
-   
-   logic [31:0] r;
+   logic [7:0]uio_in,  uio_out, uio_oe;
+   logic [31:0] r;  // a random value
    always @(posedge clk) r <= 0;
    assign ui_in = r[7:0];
-   
+   assign uio_in = 8'b0;
    logic ena = 1'b0;
    logic rst_n = ! reset;
 
+   /*
+   // Or, to provide specific inputs at specific times (as for lab C-TB) ...
+   // BE SURE TO COMMENT THE ASSIGNMENT OF INPUTS ABOVE.
+   // BE SURE TO DRIVE THESE ON THE B-PHASE OF THE CLOCK (ODD STEPS).
+   // Driving on the rising clock edge creates a race with the clock that has unpredictable simulation behavior.
+   initial begin
+      #1  // Drive inputs on the B-phase.
+         ui_in = 8'h0;
+      #10 // Step 5 cycles, past reset.
+         ui_in = 8'hFF;
+      // ...etc.
+   end
+   */
+
    // Instantiate the Tiny Tapeout module.
-   my_design tt(.*);
+   tt_fpga_hdl_demo tt(.*);
 
    assign passed = top.cyc_cnt > 60;
    assign failed = 1'b0;
@@ -34,62 +47,7 @@ endmodule
 
 
 // Provide a wrapper module to debounce input signals if requested.
-// The Tiny Tapeout top-level module.
-// This simply debounces and synchronizes inputs.
-// Debouncing is based on a counter. A change to any input will only be recognized once ALL inputs
-// are stable for a certain duration. This approach uses a single counter vs. a counter for each
-// bit.
-module tt_um_jejepsen (
-    input  wire [7:0] ui_in,    // Dedicated inputs - connected to the input switches
-    output wire [7:0] uo_out,   // Dedicated outputs - connected to the 7 segment display
-    /*   // The FPGA is based on TinyTapeout 3 which has no bidirectional I/Os (vs. TT6 for the ASIC).
-    input  wire [7:0] uio_in,   // IOs: Bidirectional Input path
-    output wire [7:0] uio_out,  // IOs: Bidirectional Output path
-    output wire [7:0] uio_oe,   // IOs: Bidirectional Enable path (active high: 0=input, 1=output)
-    */
-    input  wire       ena,      // will go high when the design is enabled
-    input  wire       clk,      // clock
-    input  wire       rst_n     // reset_n - low to reset
-);
-    
-    // Synchronize.
-    logic [9:0] inputs_ff, inputs_sync;
-    always @(posedge clk) begin
-        inputs_ff <= {ui_in, ena, rst_n};
-        inputs_sync <= inputs_ff;
-    end
 
-    // Debounce.
-    `define DEBOUNCE_MAX_CNT 14'h3fff
-    logic [9:0] inputs_candidate, inputs_captured;
-    logic sync_rst_n = inputs_sync[0];
-    logic [13:0] cnt;
-    always @(posedge clk) begin
-        if (!sync_rst_n)
-           cnt <= `DEBOUNCE_MAX_CNT;
-        else if (inputs_sync != inputs_candidate) begin
-           // Inputs changed before stablizing.
-           cnt <= `DEBOUNCE_MAX_CNT;
-           inputs_candidate <= inputs_sync;
-        end
-        else if (cnt > 0)
-           cnt <= cnt - 14'b1;
-        else begin
-           // Cnt == 0. Capture candidate inputs.
-           inputs_captured <= inputs_candidate;
-        end
-    end
-    logic [7:0] clean_ui_in;
-    logic clean_ena, clean_rst_n;
-    assign {clean_ui_in, clean_ena, clean_rst_n} = inputs_captured;
-
-    my_design my_design (
-        .ui_in(clean_ui_in),
-        
-        .ena(clean_ena),
-        .rst_n(clean_rst_n),
-        .*);
-endmodule
 //_\SV
 
 
@@ -98,14 +56,14 @@ endmodule
 // The Tiny Tapeout module
 // =======================
 
-module my_design (
+module tt_fpga_hdl_demo (
     input  wire [7:0] ui_in,    // Dedicated inputs - connected to the input switches
     output wire [7:0] uo_out,   // Dedicated outputs - connected to the 7 segment display
-    /*   // The FPGA is based on TinyTapeout 3 which has no bidirectional I/Os (vs. TT6 for the ASIC).
+       // The FPGA is based on TinyTapeout 3 which has no bidirectional I/Os (vs. TT6 for the ASIC).
     input  wire [7:0] uio_in,   // IOs: Bidirectional Input path
     output wire [7:0] uio_out,  // IOs: Bidirectional Output path
     output wire [7:0] uio_oe,   // IOs: Bidirectional Enable path (active high: 0=input, 1=output)
-    */
+    
     input  wire       ena,      // will go high when the design is enabled
     input  wire       clk,      // clock
     input  wire       rst_n     // reset_n - low to reset
@@ -141,65 +99,77 @@ logic [7:0] L0_sseg_digit_n_a0;
 // For $sseg_segment_n.
 logic [6:0] L0_sseg_segment_n_a0;
 
-// For /fpga_pins/fpga|calc$cnt.
-logic FpgaPins_Fpga_CALC_cnt_a1,
-      FpgaPins_Fpga_CALC_cnt_a2;
+// For /fpga_pins/fpga|traffic$a_light.
+logic [1:0] FpgaPins_Fpga_TRAFFIC_a_light_a1,
+            FpgaPins_Fpga_TRAFFIC_a_light_a2;
 
-// For /fpga_pins/fpga|calc$diff.
-logic [7:0] FpgaPins_Fpga_CALC_diff_a1,
-            FpgaPins_Fpga_CALC_diff_a2;
+// For /fpga_pins/fpga|traffic$a_lt_light.
+logic [1:0] FpgaPins_Fpga_TRAFFIC_a_lt_light_a1,
+            FpgaPins_Fpga_TRAFFIC_a_lt_light_a2;
 
-// For /fpga_pins/fpga|calc$digit.
-logic [3:0] FpgaPins_Fpga_CALC_digit_a3;
+// For /fpga_pins/fpga|traffic$ab.
+logic FpgaPins_Fpga_TRAFFIC_ab_a1,
+      FpgaPins_Fpga_TRAFFIC_ab_a2;
 
-// For /fpga_pins/fpga|calc$equals_in.
-logic FpgaPins_Fpga_CALC_equals_in_a0,
-      FpgaPins_Fpga_CALC_equals_in_a1;
+// For /fpga_pins/fpga|traffic$all_red.
+logic FpgaPins_Fpga_TRAFFIC_all_red_a1,
+      FpgaPins_Fpga_TRAFFIC_all_red_a2;
 
-// For /fpga_pins/fpga|calc$mem.
-logic [7:0] FpgaPins_Fpga_CALC_mem_a2,
-            FpgaPins_Fpga_CALC_mem_a3;
+// For /fpga_pins/fpga|traffic$b_light.
+logic [1:0] FpgaPins_Fpga_TRAFFIC_b_light_a1,
+            FpgaPins_Fpga_TRAFFIC_b_light_a2;
 
-// For /fpga_pins/fpga|calc$op.
-logic [2:0] FpgaPins_Fpga_CALC_op_a0,
-            FpgaPins_Fpga_CALC_op_a1,
-            FpgaPins_Fpga_CALC_op_a2;
+// For /fpga_pins/fpga|traffic$b_lt_light.
+logic [1:0] FpgaPins_Fpga_TRAFFIC_b_lt_light_a1,
+            FpgaPins_Fpga_TRAFFIC_b_lt_light_a2;
 
-// For /fpga_pins/fpga|calc$out.
-logic [7:0] FpgaPins_Fpga_CALC_out_a2,
-            FpgaPins_Fpga_CALC_out_a3;
+// For /fpga_pins/fpga|traffic$b_or_a.
+logic FpgaPins_Fpga_TRAFFIC_b_or_a_a1,
+      FpgaPins_Fpga_TRAFFIC_b_or_a_a2;
 
-// For /fpga_pins/fpga|calc$prod.
-logic [7:0] FpgaPins_Fpga_CALC_prod_a1,
-            FpgaPins_Fpga_CALC_prod_a2;
+// For /fpga_pins/fpga|traffic$ba.
+logic FpgaPins_Fpga_TRAFFIC_ba_a1,
+      FpgaPins_Fpga_TRAFFIC_ba_a2;
 
-// For /fpga_pins/fpga|calc$quot.
-logic [7:0] FpgaPins_Fpga_CALC_quot_a1,
-            FpgaPins_Fpga_CALC_quot_a2;
+// For /fpga_pins/fpga|traffic$cycle.
+logic FpgaPins_Fpga_TRAFFIC_cycle_a0,
+      FpgaPins_Fpga_TRAFFIC_cycle_a1;
 
-// For /fpga_pins/fpga|calc$reset.
-logic FpgaPins_Fpga_CALC_reset_a0,
-      FpgaPins_Fpga_CALC_reset_a1,
-      FpgaPins_Fpga_CALC_reset_a2;
+// For /fpga_pins/fpga|traffic$output_counter.
+logic [7:0] FpgaPins_Fpga_TRAFFIC_output_counter_a0,
+            FpgaPins_Fpga_TRAFFIC_output_counter_a1;
 
-// For /fpga_pins/fpga|calc$sum.
-logic [7:0] FpgaPins_Fpga_CALC_sum_a1,
-            FpgaPins_Fpga_CALC_sum_a2;
+// For /fpga_pins/fpga|traffic$reset.
+logic FpgaPins_Fpga_TRAFFIC_reset_a0,
+      FpgaPins_Fpga_TRAFFIC_reset_a1,
+      FpgaPins_Fpga_TRAFFIC_reset_a2;
 
-// For /fpga_pins/fpga|calc$val1.
-logic [7:0] FpgaPins_Fpga_CALC_val1_a1;
+// For /fpga_pins/fpga|traffic$second_counter.
+logic [31:0] FpgaPins_Fpga_TRAFFIC_second_counter_a0,
+             FpgaPins_Fpga_TRAFFIC_second_counter_a1;
 
-// For /fpga_pins/fpga|calc$val2.
-logic [7:0] FpgaPins_Fpga_CALC_val2_a0,
-            FpgaPins_Fpga_CALC_val2_a1;
+// For /fpga_pins/fpga|traffic$sel.
+logic FpgaPins_Fpga_TRAFFIC_sel_a0,
+      FpgaPins_Fpga_TRAFFIC_sel_a1,
+      FpgaPins_Fpga_TRAFFIC_sel_a2;
 
-// For /fpga_pins/fpga|calc$valid.
-logic FpgaPins_Fpga_CALC_valid_a0,
-      FpgaPins_Fpga_CALC_valid_a1,
-      FpgaPins_Fpga_CALC_valid_a2;
+// For /fpga_pins/fpga|traffic$turn.
+logic [1:0] FpgaPins_Fpga_TRAFFIC_turn_a1,
+            FpgaPins_Fpga_TRAFFIC_turn_a2;
 
-// For /fpga_pins/fpga|calc$valid_or_reset.
-logic FpgaPins_Fpga_CALC_valid_or_reset_a1;
+// For /fpga_pins/fpga|traffic/light$light.
+logic [1:0] FpgaPins_Fpga_TRAFFIC_Light_light_a1,
+            FpgaPins_Fpga_TRAFFIC_Light_light_a2;
+
+// For /fpga_pins/fpga|traffic/light$rs.
+logic FpgaPins_Fpga_TRAFFIC_Light_rs_a1;
+
+// For /fpga_pins/fpga|traffic/light_lt$light.
+logic [1:0] FpgaPins_Fpga_TRAFFIC_LightLt_light_a1,
+            FpgaPins_Fpga_TRAFFIC_LightLt_light_a2;
+
+// For /fpga_pins/fpga|traffic/light_lt$rs.
+logic FpgaPins_Fpga_TRAFFIC_LightLt_rs_a1;
 
 
 
@@ -215,47 +185,70 @@ logic FpgaPins_Fpga_CALC_valid_or_reset_a1;
 
 
          //
-         // Scope: |calc
+         // Scope: |traffic
          //
 
-            // Staging of $cnt.
-            always_ff @(posedge clk) FpgaPins_Fpga_CALC_cnt_a2 <= FpgaPins_Fpga_CALC_cnt_a1;
+            // Staging of $a_light.
+            always_ff @(posedge clk) FpgaPins_Fpga_TRAFFIC_a_light_a2[1:0] <= FpgaPins_Fpga_TRAFFIC_a_light_a1[1:0];
 
-            // Staging of $diff.
-            always_ff @(posedge clk) FpgaPins_Fpga_CALC_diff_a2[7:0] <= FpgaPins_Fpga_CALC_diff_a1[7:0];
+            // Staging of $a_lt_light.
+            always_ff @(posedge clk) FpgaPins_Fpga_TRAFFIC_a_lt_light_a2[1:0] <= FpgaPins_Fpga_TRAFFIC_a_lt_light_a1[1:0];
 
-            // Staging of $equals_in.
-            always_ff @(posedge clk) FpgaPins_Fpga_CALC_equals_in_a1 <= FpgaPins_Fpga_CALC_equals_in_a0;
+            // Staging of $ab.
+            always_ff @(posedge clk) FpgaPins_Fpga_TRAFFIC_ab_a2 <= FpgaPins_Fpga_TRAFFIC_ab_a1;
 
-            // Staging of $mem.
-            always_ff @(posedge clk) FpgaPins_Fpga_CALC_mem_a3[7:0] <= FpgaPins_Fpga_CALC_mem_a2[7:0];
+            // Staging of $all_red.
+            always_ff @(posedge clk) FpgaPins_Fpga_TRAFFIC_all_red_a2 <= FpgaPins_Fpga_TRAFFIC_all_red_a1;
 
-            // Staging of $op.
-            always_ff @(posedge clk) FpgaPins_Fpga_CALC_op_a1[2:0] <= FpgaPins_Fpga_CALC_op_a0[2:0];
-            always_ff @(posedge clk) FpgaPins_Fpga_CALC_op_a2[2:0] <= FpgaPins_Fpga_CALC_op_a1[2:0];
+            // Staging of $b_light.
+            always_ff @(posedge clk) FpgaPins_Fpga_TRAFFIC_b_light_a2[1:0] <= FpgaPins_Fpga_TRAFFIC_b_light_a1[1:0];
 
-            // Staging of $out.
-            always_ff @(posedge clk) FpgaPins_Fpga_CALC_out_a3[7:0] <= FpgaPins_Fpga_CALC_out_a2[7:0];
+            // Staging of $b_lt_light.
+            always_ff @(posedge clk) FpgaPins_Fpga_TRAFFIC_b_lt_light_a2[1:0] <= FpgaPins_Fpga_TRAFFIC_b_lt_light_a1[1:0];
 
-            // Staging of $prod.
-            always_ff @(posedge clk) FpgaPins_Fpga_CALC_prod_a2[7:0] <= FpgaPins_Fpga_CALC_prod_a1[7:0];
+            // Staging of $b_or_a.
+            always_ff @(posedge clk) FpgaPins_Fpga_TRAFFIC_b_or_a_a2 <= FpgaPins_Fpga_TRAFFIC_b_or_a_a1;
 
-            // Staging of $quot.
-            always_ff @(posedge clk) FpgaPins_Fpga_CALC_quot_a2[7:0] <= FpgaPins_Fpga_CALC_quot_a1[7:0];
+            // Staging of $ba.
+            always_ff @(posedge clk) FpgaPins_Fpga_TRAFFIC_ba_a2 <= FpgaPins_Fpga_TRAFFIC_ba_a1;
+
+            // Staging of $cycle.
+            always_ff @(posedge clk) FpgaPins_Fpga_TRAFFIC_cycle_a1 <= FpgaPins_Fpga_TRAFFIC_cycle_a0;
+
+            // Staging of $output_counter.
+            always_ff @(posedge clk) FpgaPins_Fpga_TRAFFIC_output_counter_a1[7:0] <= FpgaPins_Fpga_TRAFFIC_output_counter_a0[7:0];
 
             // Staging of $reset.
-            always_ff @(posedge clk) FpgaPins_Fpga_CALC_reset_a1 <= FpgaPins_Fpga_CALC_reset_a0;
-            always_ff @(posedge clk) FpgaPins_Fpga_CALC_reset_a2 <= FpgaPins_Fpga_CALC_reset_a1;
+            always_ff @(posedge clk) FpgaPins_Fpga_TRAFFIC_reset_a1 <= FpgaPins_Fpga_TRAFFIC_reset_a0;
+            always_ff @(posedge clk) FpgaPins_Fpga_TRAFFIC_reset_a2 <= FpgaPins_Fpga_TRAFFIC_reset_a1;
 
-            // Staging of $sum.
-            always_ff @(posedge clk) FpgaPins_Fpga_CALC_sum_a2[7:0] <= FpgaPins_Fpga_CALC_sum_a1[7:0];
+            // Staging of $second_counter.
+            always_ff @(posedge clk) FpgaPins_Fpga_TRAFFIC_second_counter_a1[31:0] <= FpgaPins_Fpga_TRAFFIC_second_counter_a0[31:0];
 
-            // Staging of $val2.
-            always_ff @(posedge clk) FpgaPins_Fpga_CALC_val2_a1[7:0] <= FpgaPins_Fpga_CALC_val2_a0[7:0];
+            // Staging of $sel.
+            always_ff @(posedge clk) FpgaPins_Fpga_TRAFFIC_sel_a1 <= FpgaPins_Fpga_TRAFFIC_sel_a0;
+            always_ff @(posedge clk) FpgaPins_Fpga_TRAFFIC_sel_a2 <= FpgaPins_Fpga_TRAFFIC_sel_a1;
 
-            // Staging of $valid.
-            always_ff @(posedge clk) FpgaPins_Fpga_CALC_valid_a1 <= FpgaPins_Fpga_CALC_valid_a0;
-            always_ff @(posedge clk) FpgaPins_Fpga_CALC_valid_a2 <= FpgaPins_Fpga_CALC_valid_a1;
+            // Staging of $turn.
+            always_ff @(posedge clk) FpgaPins_Fpga_TRAFFIC_turn_a2[1:0] <= FpgaPins_Fpga_TRAFFIC_turn_a1[1:0];
+
+
+            //
+            // Scope: /light
+            //
+
+               // Staging of $light.
+               always_ff @(posedge clk) FpgaPins_Fpga_TRAFFIC_Light_light_a2[1:0] <= FpgaPins_Fpga_TRAFFIC_Light_light_a1[1:0];
+
+
+
+            //
+            // Scope: /light_lt
+            //
+
+               // Staging of $light.
+               always_ff @(posedge clk) FpgaPins_Fpga_TRAFFIC_LightLt_light_a2[1:0] <= FpgaPins_Fpga_TRAFFIC_LightLt_light_a1[1:0];
+
 
 
 
@@ -304,39 +297,57 @@ logic FpgaPins_Fpga_CALC_valid_or_reset_a1;
          if (1) begin : \/fpga 
 
             //
-            // Scope: |calc
+            // Scope: |traffic
             //
-            if (1) begin : P_calc
-               (* keep *) logic  \///@1$cnt ;
-               assign \///@1$cnt = FpgaPins_Fpga_CALC_cnt_a1;
-               (* keep *) logic [7:0] \///?$valid_or_reset@1$diff ;
-               assign \///?$valid_or_reset@1$diff = FpgaPins_Fpga_CALC_diff_a1;
-               (* keep *) logic [3:0] \///@3$digit ;
-               assign \///@3$digit = FpgaPins_Fpga_CALC_digit_a3;
-               (* keep *) logic  \///@0$equals_in ;
-               assign \///@0$equals_in = FpgaPins_Fpga_CALC_equals_in_a0;
-               (* keep *) logic [7:0] \///@2$mem ;
-               assign \///@2$mem = FpgaPins_Fpga_CALC_mem_a2;
-               (* keep *) logic [2:0] \///@0$op ;
-               assign \///@0$op = FpgaPins_Fpga_CALC_op_a0;
-               (* keep *) logic [7:0] \///@2$out ;
-               assign \///@2$out = FpgaPins_Fpga_CALC_out_a2;
-               (* keep *) logic [7:0] \///?$valid_or_reset@1$prod ;
-               assign \///?$valid_or_reset@1$prod = FpgaPins_Fpga_CALC_prod_a1;
-               (* keep *) logic [7:0] \///?$valid_or_reset@1$quot ;
-               assign \///?$valid_or_reset@1$quot = FpgaPins_Fpga_CALC_quot_a1;
+            if (1) begin : P_traffic
+               (* keep *) logic [1:0] \///?$cycle?$ab@1$a_light ;
+               assign \///?$cycle?$ab@1$a_light = FpgaPins_Fpga_TRAFFIC_a_light_a1;
+               (* keep *) logic [1:0] \///?$cycle?$ab@1$a_lt_light ;
+               assign \///?$cycle?$ab@1$a_lt_light = FpgaPins_Fpga_TRAFFIC_a_lt_light_a1;
+               (* keep *) logic  \///@1$ab ;
+               assign \///@1$ab = FpgaPins_Fpga_TRAFFIC_ab_a1;
+               (* keep *) logic  \///?$cycle@1$all_red ;
+               assign \///?$cycle@1$all_red = FpgaPins_Fpga_TRAFFIC_all_red_a1;
+               (* keep *) logic [1:0] \///?$cycle?$ba@1$b_light ;
+               assign \///?$cycle?$ba@1$b_light = FpgaPins_Fpga_TRAFFIC_b_light_a1;
+               (* keep *) logic [1:0] \///?$cycle?$ba@1$b_lt_light ;
+               assign \///?$cycle?$ba@1$b_lt_light = FpgaPins_Fpga_TRAFFIC_b_lt_light_a1;
+               (* keep *) logic  \///?$cycle@1$b_or_a ;
+               assign \///?$cycle@1$b_or_a = FpgaPins_Fpga_TRAFFIC_b_or_a_a1;
+               (* keep *) logic  \///@1$ba ;
+               assign \///@1$ba = FpgaPins_Fpga_TRAFFIC_ba_a1;
+               (* keep *) logic  \///@0$cycle ;
+               assign \///@0$cycle = FpgaPins_Fpga_TRAFFIC_cycle_a0;
+               (* keep *) logic [7:0] \///@0$output_counter ;
+               assign \///@0$output_counter = FpgaPins_Fpga_TRAFFIC_output_counter_a0;
                (* keep *) logic  \///@0$reset ;
-               assign \///@0$reset = FpgaPins_Fpga_CALC_reset_a0;
-               (* keep *) logic [7:0] \///?$valid_or_reset@1$sum ;
-               assign \///?$valid_or_reset@1$sum = FpgaPins_Fpga_CALC_sum_a1;
-               (* keep *) logic [7:0] \///?$valid_or_reset@1$val1 ;
-               assign \///?$valid_or_reset@1$val1 = FpgaPins_Fpga_CALC_val1_a1;
-               (* keep *) logic [7:0] \///@0$val2 ;
-               assign \///@0$val2 = FpgaPins_Fpga_CALC_val2_a0;
-               (* keep *) logic  \///@0$valid ;
-               assign \///@0$valid = FpgaPins_Fpga_CALC_valid_a0;
-               (* keep *) logic  \///@1$valid_or_reset ;
-               assign \///@1$valid_or_reset = FpgaPins_Fpga_CALC_valid_or_reset_a1;
+               assign \///@0$reset = FpgaPins_Fpga_TRAFFIC_reset_a0;
+               (* keep *) logic [31:0] \///@0$second_counter ;
+               assign \///@0$second_counter = FpgaPins_Fpga_TRAFFIC_second_counter_a0;
+               (* keep *) logic  \///@0$sel ;
+               assign \///@0$sel = FpgaPins_Fpga_TRAFFIC_sel_a0;
+               (* keep *) logic [1:0] \///?$cycle@1$turn ;
+               assign \///?$cycle@1$turn = FpgaPins_Fpga_TRAFFIC_turn_a1;
+
+               //
+               // Scope: /light
+               //
+               if (1) begin : \/light 
+                  (* keep *) logic [1:0] \///?$cycle/@1$light ;
+                  assign \///?$cycle/@1$light = FpgaPins_Fpga_TRAFFIC_Light_light_a1;
+                  (* keep *) logic  \///?$cycle/@1$rs ;
+                  assign \///?$cycle/@1$rs = FpgaPins_Fpga_TRAFFIC_Light_rs_a1;
+               end
+
+               //
+               // Scope: /light_lt
+               //
+               if (1) begin : \/light_lt 
+                  (* keep *) logic [1:0] \///?$cycle/@1$light ;
+                  assign \///?$cycle/@1$light = FpgaPins_Fpga_TRAFFIC_LightLt_light_a1;
+                  (* keep *) logic  \///?$cycle/@1$rs ;
+                  assign \///?$cycle/@1$rs = FpgaPins_Fpga_TRAFFIC_LightLt_rs_a1;
+               end
             end
          end
       end
@@ -356,7 +367,7 @@ logic FpgaPins_Fpga_CALC_valid_or_reset_a1;
 //_\TLV
    /* verilator lint_off UNOPTFLAT */
    // Connect Tiny Tapeout I/Os to Virtual FPGA Lab.
-   //_\source /raw.githubusercontent.com/osfpga/VirtualFPGALab/35e36bd144fddd75495d4cbc01c4fc50ac5bde6f/tlvlib/tinytapeoutlib.tlv 76   // Instantiated from top.tlv, 208 as: m5+tt_connections()
+   //_\source /raw.githubusercontent.com/osfpga/VirtualFPGALab/35e36bd144fddd75495d4cbc01c4fc50ac5bde6f/tlvlib/tinytapeoutlib.tlv 76   // Instantiated from top.tlv, 300 as: m5+tt_connections()
       assign L0_slideswitch_a0[7:0] = ui_in;
       assign L0_sseg_segment_n_a0[6:0] = ~ uo_out[6:0];
       assign L0_sseg_decimal_point_n_a0 = ~ uo_out[7];
@@ -364,7 +375,7 @@ logic FpgaPins_Fpga_CALC_valid_or_reset_a1;
    //_\end_source
 
    // Instantiate the Virtual FPGA Lab.
-   //_\source /raw.githubusercontent.com/osfpga/VirtualFPGALab/a069f1e4e19adc829b53237b3e0b5d6763dc3194/tlvlib/fpgaincludes.tlv 307   // Instantiated from top.tlv, 211 as: m5+board(/top, /fpga, 7, $, , calc)
+   //_\source /raw.githubusercontent.com/osfpga/VirtualFPGALab/a069f1e4e19adc829b53237b3e0b5d6763dc3194/tlvlib/fpgaincludes.tlv 307   // Instantiated from top.tlv, 303 as: m5+board(/top, /fpga, 7, $, , traffic)
       
       //_\source /raw.githubusercontent.com/osfpga/VirtualFPGALab/a069f1e4e19adc829b53237b3e0b5d6763dc3194/tlvlib/fpgaincludes.tlv 355   // Instantiated from /raw.githubusercontent.com/osfpga/VirtualFPGALab/a069f1e4e19adc829b53237b3e0b5d6763dc3194/tlvlib/fpgaincludes.tlv, 309 as: m4+thanks(m5__l(309)m5_eval(m5_get(BOARD_THANKS_ARGS)))
          //_/thanks
@@ -379,111 +390,190 @@ logic FpgaPins_Fpga_CALC_valid_or_reset_a1;
       //_/fpga_pins
          
          //_/fpga
-            //_\source top.tlv 49   // Instantiated from /raw.githubusercontent.com/osfpga/VirtualFPGALab/a069f1e4e19adc829b53237b3e0b5d6763dc3194/tlvlib/fpgaincludes.tlv, 340 as: m4+calc.
+            //_\source top.tlv 48   // Instantiated from /raw.githubusercontent.com/osfpga/VirtualFPGALab/a069f1e4e19adc829b53237b3e0b5d6763dc3194/tlvlib/fpgaincludes.tlv, 340 as: m4+traffic.
             
-               //_|calc
+            
+               //_|traffic
+                  //cycle through Red Green cycles
+            
+            
+                  //Clock to seconds counter
                   //_@0
-                     assign FpgaPins_Fpga_CALC_reset_a0 = reset;
-                     assign FpgaPins_Fpga_CALC_val2_a0[7:0] = {4'b0, ui_in[3:0]};
-                     assign FpgaPins_Fpga_CALC_op_a0[2:0] = ui_in[6:4];
-                     assign FpgaPins_Fpga_CALC_equals_in_a0 = ui_in[7];
-                     assign FpgaPins_Fpga_CALC_valid_a0 = FpgaPins_Fpga_CALC_reset_a0 ?
-                                      1'b0:
-                                      (FpgaPins_Fpga_CALC_equals_in_a0 & !(FpgaPins_Fpga_CALC_equals_in_a1)) ?
-                                          1'b1:
-                                          1'b0;
-            
-            
-            
+                     /*$car = *ui_in[0];
+                     $need_to_clear = ($car)
+                                      ? 1'b1:
+                                      >>1$clear & !$car
+                                      ? 1'b0:
+                                      >>1$need_to_clear;
+                     $clear =  (>>2$ab & (>>2$a_light == 2'b00));
+                     */
+                     assign FpgaPins_Fpga_TRAFFIC_reset_a0 = reset;
+                     /* $second_counter[31:0] = $reset ?
+                                          32'b0:
+                                        $need_to_clear
+                                         ? >>1$second_counter +1:
+                                         >>1$second_counter;
+                     */
+                     assign FpgaPins_Fpga_TRAFFIC_second_counter_a0[31:0] = FpgaPins_Fpga_TRAFFIC_reset_a0 ?
+                                          32'b0:
+                                        FpgaPins_Fpga_TRAFFIC_second_counter_a1 +1;
+                     assign FpgaPins_Fpga_TRAFFIC_output_counter_a0[7:0] = FpgaPins_Fpga_TRAFFIC_reset_a0 ?
+                                          8'b0:
+                                          FpgaPins_Fpga_TRAFFIC_output_counter_a1 +1;
+                     assign FpgaPins_Fpga_TRAFFIC_cycle_a0 = (FpgaPins_Fpga_TRAFFIC_second_counter_a0[24] & !FpgaPins_Fpga_TRAFFIC_second_counter_a1[24]);
+                     //$cycle = (*ui_in[0]);
+                     assign FpgaPins_Fpga_TRAFFIC_sel_a0 = !FpgaPins_Fpga_TRAFFIC_output_counter_a0[4];
                   //_@1
-                     assign FpgaPins_Fpga_CALC_cnt_a1 = FpgaPins_Fpga_CALC_reset_a1 == 1'b1 ?
-                                  1'b0:
-                                  (FpgaPins_Fpga_CALC_cnt_a2 + 1'b1);
-            
-            
-                     assign FpgaPins_Fpga_CALC_valid_or_reset_a1 = ((FpgaPins_Fpga_CALC_reset_a1 || FpgaPins_Fpga_CALC_valid_a1));
-            
-                  //_?$valid_or_reset
+                     assign FpgaPins_Fpga_TRAFFIC_ba_a1 = FpgaPins_Fpga_TRAFFIC_b_or_a_a1;
+                     assign FpgaPins_Fpga_TRAFFIC_ab_a1 = !FpgaPins_Fpga_TRAFFIC_b_or_a_a1;
+                     //$update = $cycle & !>>1$cycle;
+                  //_?$cycle
                      //_@1
-                        assign FpgaPins_Fpga_CALC_val1_a1[7:0] = FpgaPins_Fpga_CALC_out_a3;
-                        assign FpgaPins_Fpga_CALC_sum_a1[7:0] = FpgaPins_Fpga_CALC_val1_a1[7:0] + FpgaPins_Fpga_CALC_val2_a1[7:0];
-                        assign FpgaPins_Fpga_CALC_diff_a1[7:0] = FpgaPins_Fpga_CALC_val1_a1[7:0] - FpgaPins_Fpga_CALC_val2_a1[7:0];
-                        assign FpgaPins_Fpga_CALC_prod_a1[7:0] = FpgaPins_Fpga_CALC_val1_a1[7:0] * FpgaPins_Fpga_CALC_val2_a1[7:0];
-                        assign FpgaPins_Fpga_CALC_quot_a1[7:0] = FpgaPins_Fpga_CALC_val1_a1[7:0] / FpgaPins_Fpga_CALC_val2_a1[7:0];
+                        //turn logic
+                        assign FpgaPins_Fpga_TRAFFIC_b_or_a_a1 = FpgaPins_Fpga_TRAFFIC_reset_a1
+                                ? 1'b1:
+                                !FpgaPins_Fpga_TRAFFIC_cycle_a1
+                                ? FpgaPins_Fpga_TRAFFIC_b_or_a_a2:
+                                (FpgaPins_Fpga_TRAFFIC_all_red_a1 & !FpgaPins_Fpga_TRAFFIC_all_red_a2)
+                                ? !FpgaPins_Fpga_TRAFFIC_b_or_a_a2:
+                                FpgaPins_Fpga_TRAFFIC_b_or_a_a2;
             
+                        //Logic Control
+                        /*$a_lt_light[1:0] = $reset
+                                        ? 2'b11://red
+                                        !$cycle
+                                        ? >>1$a_lt_light:
+                                        $cycle & ((>>1$all_red & (>>2$a_lt_light == 2'b11)))
+                                        ? 2'b00://green
+                                        $cycle & ((>>1$a_lt_light == 2'b00)| (>>2$a_lt_light == 2'b00) | (>>3$a_lt_light == 2'b00))
+                                        ? 2'b01://yellow
+                                        2'b11;//red
+                        */
+                        assign FpgaPins_Fpga_TRAFFIC_turn_a1[1:0] = FpgaPins_Fpga_TRAFFIC_reset_a1 | FpgaPins_Fpga_TRAFFIC_reset_a2
+                                   ? 2'b00:
+                                   !FpgaPins_Fpga_TRAFFIC_cycle_a1
+                                   ? FpgaPins_Fpga_TRAFFIC_turn_a2:
+                                   FpgaPins_Fpga_TRAFFIC_turn_a2 +1;
             
-                  //_@2
-                     assign FpgaPins_Fpga_CALC_mem_a2[7:0] = FpgaPins_Fpga_CALC_reset_a2 == 1'b1 ?
-                                 8'b0:
-                                 FpgaPins_Fpga_CALC_op_a2[2:0] == 3'b101 ?
-                                 FpgaPins_Fpga_CALC_out_a3 :
-                                 FpgaPins_Fpga_CALC_mem_a3;
+                        assign FpgaPins_Fpga_TRAFFIC_all_red_a1 = FpgaPins_Fpga_TRAFFIC_reset_a1 | FpgaPins_Fpga_TRAFFIC_reset_a2
+                                   ? 1'b1://red
+                                   !FpgaPins_Fpga_TRAFFIC_cycle_a1
+                                   ? FpgaPins_Fpga_TRAFFIC_all_red_a2:
+                                   FpgaPins_Fpga_TRAFFIC_cycle_a1 & (FpgaPins_Fpga_TRAFFIC_turn_a1 == 2'b00)
+                                   ? 1'b1:
+                                   1'b0;
+                     //light hookup
+                     //_/light_lt
+                        //_@1
+                           assign FpgaPins_Fpga_TRAFFIC_LightLt_rs_a1 = FpgaPins_Fpga_TRAFFIC_reset_a1;
+                           assign FpgaPins_Fpga_TRAFFIC_LightLt_light_a1[1:0] = FpgaPins_Fpga_TRAFFIC_LightLt_rs_a1
+                                        ? 2'b11://red
+                                        !FpgaPins_Fpga_TRAFFIC_cycle_a1
+                                        ? FpgaPins_Fpga_TRAFFIC_LightLt_light_a2:
+                                        FpgaPins_Fpga_TRAFFIC_cycle_a1 & (!FpgaPins_Fpga_TRAFFIC_all_red_a1 & FpgaPins_Fpga_TRAFFIC_all_red_a2)
+                                        ? 2'b00://green
+                                        FpgaPins_Fpga_TRAFFIC_cycle_a1 & ((FpgaPins_Fpga_TRAFFIC_LightLt_light_a2 == 2'b00))
+                                        ? 2'b01://yellow
+                                        2'b01;//yellow
+                     //_/light
+                        //_@1
+                           assign FpgaPins_Fpga_TRAFFIC_Light_rs_a1 = FpgaPins_Fpga_TRAFFIC_reset_a1;
+                           assign FpgaPins_Fpga_TRAFFIC_Light_light_a1[1:0] = FpgaPins_Fpga_TRAFFIC_Light_rs_a1
+                                        ? 2'b11://red
+                                        !FpgaPins_Fpga_TRAFFIC_cycle_a1
+                                        ? FpgaPins_Fpga_TRAFFIC_Light_light_a2:
+                                        FpgaPins_Fpga_TRAFFIC_cycle_a1 & (FpgaPins_Fpga_TRAFFIC_LightLt_light_a2 == 2'b00)
+                                        ? 2'b00://green
+                                        FpgaPins_Fpga_TRAFFIC_cycle_a1 & ((FpgaPins_Fpga_TRAFFIC_Light_light_a2 == 2'b00))
+                                        ? 2'b01://yellow
+                                        2'b11;//red
             
-                     assign FpgaPins_Fpga_CALC_out_a2[7:0] = FpgaPins_Fpga_CALC_reset_a2 == 1'b1 ?
-                                   8'b0:
-                                 !FpgaPins_Fpga_CALC_valid_a2 ?
-                                 FpgaPins_Fpga_CALC_out_a3[7:0]:
-                                   FpgaPins_Fpga_CALC_op_a2[2:0]== 3'b000 ?
-                                      FpgaPins_Fpga_CALC_sum_a2[7:0] :
-                                   FpgaPins_Fpga_CALC_op_a2[2:0]== 3'b001 ?
-                                       FpgaPins_Fpga_CALC_diff_a2[7:0]:
-                                   FpgaPins_Fpga_CALC_op_a2[2:0]== 3'b010 ?
-                                       FpgaPins_Fpga_CALC_prod_a2[7:0]:
-                                   FpgaPins_Fpga_CALC_op_a2[2:0] == 3'b011 ?
-                                       FpgaPins_Fpga_CALC_quot_a2[7:0] :
-                                   FpgaPins_Fpga_CALC_op_a2[2:0] ==3'b100 ?
-                                       FpgaPins_Fpga_CALC_mem_a3[7:0] :
-                                       FpgaPins_Fpga_CALC_out_a3;
+                     //_?$ba
+                        //_@1
+                           assign FpgaPins_Fpga_TRAFFIC_b_lt_light_a1[1:0] = FpgaPins_Fpga_TRAFFIC_reset_a1
+                                        ? 2'b11:
+                                        !FpgaPins_Fpga_TRAFFIC_cycle_a1
+                                        ? FpgaPins_Fpga_TRAFFIC_b_lt_light_a2:
+                                        FpgaPins_Fpga_TRAFFIC_LightLt_light_a1[1:0];
+                           assign FpgaPins_Fpga_TRAFFIC_b_light_a1[1:0] = FpgaPins_Fpga_TRAFFIC_reset_a1
+                                        ? 2'b11:
+                                        !FpgaPins_Fpga_TRAFFIC_cycle_a1
+                                        ? FpgaPins_Fpga_TRAFFIC_b_light_a2:
+                                        FpgaPins_Fpga_TRAFFIC_Light_light_a1[1:0];
             
+                     //_?$ab
+                        //_@1
+                           assign FpgaPins_Fpga_TRAFFIC_a_lt_light_a1[1:0] = FpgaPins_Fpga_TRAFFIC_reset_a1
+                                        ? 2'b11:
+                                        !FpgaPins_Fpga_TRAFFIC_cycle_a1
+                                        ? FpgaPins_Fpga_TRAFFIC_a_lt_light_a2:
+                                        FpgaPins_Fpga_TRAFFIC_LightLt_light_a1[1:0];
+                           assign FpgaPins_Fpga_TRAFFIC_a_light_a1[1:0] = FpgaPins_Fpga_TRAFFIC_reset_a1
+                                        ? 2'b11:
+                                        !FpgaPins_Fpga_TRAFFIC_cycle_a1
+                                        ? FpgaPins_Fpga_TRAFFIC_a_light_a2:
+                                        FpgaPins_Fpga_TRAFFIC_Light_light_a1[1:0];
             
-                  //_@3
-                     assign FpgaPins_Fpga_CALC_digit_a3[3:0] = FpgaPins_Fpga_CALC_out_a3[3:0];
-                     assign uo_out = FpgaPins_Fpga_CALC_digit_a3 == 4'h0 ?
-                                       8'b00111111:
-                               FpgaPins_Fpga_CALC_digit_a3 == 4'h1 ?
-                                       8'b00000110:
-                               FpgaPins_Fpga_CALC_digit_a3 == 4'h2 ?
-                                       8'b01011011:
-                               FpgaPins_Fpga_CALC_digit_a3 == 4'h3 ?
-                                       8'b01001111:
-                               FpgaPins_Fpga_CALC_digit_a3 == 4'h4 ?
-                                       8'b01100110:
-                               FpgaPins_Fpga_CALC_digit_a3 == 4'h5 ?
-                                       8'b01101101:
-                               FpgaPins_Fpga_CALC_digit_a3 == 4'h6 ?
-                                       8'b01111101:
-                               FpgaPins_Fpga_CALC_digit_a3 == 4'h7 ?
-                                       8'b00000111:
-                               FpgaPins_Fpga_CALC_digit_a3 == 4'h8 ?
-                                       8'b01111111:
-                               FpgaPins_Fpga_CALC_digit_a3 == 4'h9 ?
-                                       8'b001101111:
-                               FpgaPins_Fpga_CALC_digit_a3 == 4'ha ?
-                                       8'b01110111:
-                               FpgaPins_Fpga_CALC_digit_a3 == 4'hb ?
-                                       8'b01111100:
-                               FpgaPins_Fpga_CALC_digit_a3 == 4'hc ?
-                                       8'b00111001:
-                               FpgaPins_Fpga_CALC_digit_a3 == 4'hd ?
-                                       8'b01011110:
-                               FpgaPins_Fpga_CALC_digit_a3 == 4'he ?
-                                       8'b01111001:
-                               FpgaPins_Fpga_CALC_digit_a3 == 4'hf ?
-                                       8'b01110001:
-                                       8'b11111111;
-            
+                  //_@2//output with 2 digit display
+                     //$display_1
+                     //$display_2
+                     //ABAlBl
+                     assign uio_oe = 8'b1;
+                     assign uio_out = //RRRR
+                                 (FpgaPins_Fpga_TRAFFIC_all_red_a2 & FpgaPins_Fpga_TRAFFIC_sel_a2)
+                                 ? 8'b10111001:
+                                 (FpgaPins_Fpga_TRAFFIC_all_red_a2 & !FpgaPins_Fpga_TRAFFIC_sel_a2)
+                                 ?  8'b00001111:
+                                 //RRRG
+                                 (FpgaPins_Fpga_TRAFFIC_ba_a2 & (FpgaPins_Fpga_TRAFFIC_b_lt_light_a2 == 2'b00) & FpgaPins_Fpga_TRAFFIC_sel_a2)
+                                  ? 8'b10011000:
+                                 (FpgaPins_Fpga_TRAFFIC_ba_a2 & (FpgaPins_Fpga_TRAFFIC_b_lt_light_a2 == 2'b00) & !FpgaPins_Fpga_TRAFFIC_sel_a2)
+                                 ? 8'b00000011:
+                                 //RGRY
+                                 (FpgaPins_Fpga_TRAFFIC_ba_a2 & (FpgaPins_Fpga_TRAFFIC_b_lt_light_a2 == 2'b01) & (FpgaPins_Fpga_TRAFFIC_b_light_a2 == 2'b00) & FpgaPins_Fpga_TRAFFIC_sel_a2)
+                                 ? 8'b10010100:
+                                 (FpgaPins_Fpga_TRAFFIC_ba_a2 & (FpgaPins_Fpga_TRAFFIC_b_lt_light_a2 == 2'b01) & (FpgaPins_Fpga_TRAFFIC_b_light_a2 == 2'b00) & !FpgaPins_Fpga_TRAFFIC_sel_a2)
+                                 ?  8'b00100010:
+                                 //RYRY
+                                 (FpgaPins_Fpga_TRAFFIC_ba_a2 & (FpgaPins_Fpga_TRAFFIC_b_lt_light_a2 == 2'b01) & (FpgaPins_Fpga_TRAFFIC_b_light_a2 == 2'b01) & FpgaPins_Fpga_TRAFFIC_sel_a2)
+                                 ? 8'b10011100:
+                                 (FpgaPins_Fpga_TRAFFIC_ba_a2 & (FpgaPins_Fpga_TRAFFIC_b_lt_light_a2 == 2'b01) & (FpgaPins_Fpga_TRAFFIC_b_light_a2 == 2'b01) & !FpgaPins_Fpga_TRAFFIC_sel_a2)
+                                 ? 8'b00100011:
+                                 //RRRR
+                                 //($digit[4] & $sel)
+                                 //? 8'b00111001:
+                                 //($digit[4] & !$sel)
+                                 //? 8'b10001111:
+                                 //RRGR
+                                 (FpgaPins_Fpga_TRAFFIC_ab_a2 & (FpgaPins_Fpga_TRAFFIC_a_lt_light_a2 == 2'b00) & FpgaPins_Fpga_TRAFFIC_sel_a2)
+                                 ? 8'b10100001:
+                                 (FpgaPins_Fpga_TRAFFIC_ab_a2 & (FpgaPins_Fpga_TRAFFIC_a_lt_light_a2 == 2'b00) & !FpgaPins_Fpga_TRAFFIC_sel_a2)
+                                 ? 8'b00001100:
+                                 //GRYR
+                                 (FpgaPins_Fpga_TRAFFIC_ab_a2 & (FpgaPins_Fpga_TRAFFIC_a_lt_light_a2 == 2'b01) & (FpgaPins_Fpga_TRAFFIC_a_light_a2 == 2'b00) & FpgaPins_Fpga_TRAFFIC_sel_a2)
+                                 ?  8'b11000001:
+                                 (FpgaPins_Fpga_TRAFFIC_ab_a2 & (FpgaPins_Fpga_TRAFFIC_a_lt_light_a2 == 2'b01) & (FpgaPins_Fpga_TRAFFIC_a_light_a2 == 2'b00) & !FpgaPins_Fpga_TRAFFIC_sel_a2)
+                                  ? 8'b01001000:
+                                 //YRYR
+                                 (FpgaPins_Fpga_TRAFFIC_ab_a2 & (FpgaPins_Fpga_TRAFFIC_a_lt_light_a2 == 2'b01) & (FpgaPins_Fpga_TRAFFIC_a_light_a2 == 2'b01) & FpgaPins_Fpga_TRAFFIC_sel_a2)
+                                 ? 8'b01011000:
+                                 (FpgaPins_Fpga_TRAFFIC_ab_a2 & (FpgaPins_Fpga_TRAFFIC_a_lt_light_a2 == 2'b01) & (FpgaPins_Fpga_TRAFFIC_a_light_a2 == 2'b01) & !FpgaPins_Fpga_TRAFFIC_sel_a2)
+                                 ?  8'b11000011:
+                                 FpgaPins_Fpga_TRAFFIC_sel_a2 //all red safe state
+                                 ?8'b0:
+                                 8'b10;
             
             
                // Note that pipesignals assigned here can be found under /fpga_pins/fpga.
             
             
-            //comment out for fpga
-               //m5+cal_viz(@2, /fpga)
+            
             
                // Connect Tiny Tapeout outputs. Note that uio_ outputs are not available in the Tiny-Tapeout-3-based FPGA boards.
-               assign uo_out = 8'b0;
-               
-               
+               //*uo_out = 8'b0;
+               //*uio_oe = 8'b1;
+               assign uio_out = 8'b0;
+               assign uio_oe = 8'b0;
             //_\end_source
    
       // LEDs.
@@ -520,7 +610,7 @@ logic FpgaPins_Fpga_CALC_valid_or_reset_a1;
       
    //_\end_source
    // Label the switch inputs [0..7] (1..8 on the physical switch panel) (top-to-bottom).
-   //_\source /raw.githubusercontent.com/osfpga/VirtualFPGALab/35e36bd144fddd75495d4cbc01c4fc50ac5bde6f/tlvlib/tinytapeoutlib.tlv 82   // Instantiated from top.tlv, 213 as: m5+tt_input_labels_viz(⌈"Value[0]", "Value[1]", "Value[2]", "Value[3]", "Op[0]", "Op[1]", "Op[2]", "="⌉)
+   //_\source /raw.githubusercontent.com/osfpga/VirtualFPGALab/35e36bd144fddd75495d4cbc01c4fc50ac5bde6f/tlvlib/tinytapeoutlib.tlv 82   // Instantiated from top.tlv, 305 as: m5+tt_input_labels_viz(⌈"UNUSED", "UNUSED", "UNUSED", "UNUSED", "UNUSED", "UNUSED", "UNUSED", "UNUSED"⌉)
       for (input_label = 0; input_label <= 7; input_label++) begin : L1_InputLabel //_/input_label
          
       end
