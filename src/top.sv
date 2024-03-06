@@ -518,8 +518,8 @@ logic FpgaPins_Fpga_TRAFFIC_LightLt_rs_a1;
                      //$display_1
                      //$display_2
                      //ABAlBl
-                     assign uio_oe = 8'b1;
-                     assign uio_out = //RRRR
+            
+                     assign uo_out = //RRRR
                                  (FpgaPins_Fpga_TRAFFIC_all_red_a2 & FpgaPins_Fpga_TRAFFIC_sel_a2)
                                  ? 8'b10111001:
                                  (FpgaPins_Fpga_TRAFFIC_all_red_a2 & !FpgaPins_Fpga_TRAFFIC_sel_a2)
